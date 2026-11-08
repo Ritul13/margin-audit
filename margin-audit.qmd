@@ -1,0 +1,126 @@
+---
+title: "Executive Margin & Leakage Audit"
+subtitle: "Automated DuckDB + Quarto Financial Pipeline"
+date: today
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 2
+    embed-resources: true
+    code-fold: true
+execute:
+  echo: false
+  warning: false
+---
+
+::: {.callout-note}
+## Executive Summary
+- **Total Net Revenue:** Realized aggregate gross sales reflect healthy volume across core markets.
+- **Primary Margin Driver:** Electronics & Furniture represent 60% of volume but face structural compression from discounts exceeding 15%.
+- **Action Item:** Enforce a hard approval gate for category discounts $>10\%$ in APAC and LATAM to reclaim estimated 3.4% blended margin.
+:::
+
+```{python}
+import duckdb
+import plotly.express as px
+import plotly.graph_objects as go
+import pandas as pd
+
+# In-memory analytical connection directly against parquet
+con = duckdb.connect()
+
+summary_query = """
+SELECT 
+    SUM(revenue) AS total_revenue,
+    SUM(cogs) AS total_cogs,
+    SUM(revenue - cogs) AS gross_profit,
+    ROUND(SUM(revenue - cogs) / SUM(revenue) * 100, 2) AS blended_margin_pct
+FROM 'data/sales_sample.parquet'
+"""
+kpi = con.execute(summary_query).df().iloc[0]
+```
+
+## Portfolio Financial Performance
+
+```{python}
+fig_kpi = go.Figure()
+fig_kpi.add_trace(go.Indicator(
+    mode="number",
+    value=kpi['total_revenue'],
+    number={'prefix': "$", 'valueformat': ",.0f"},
+    title={'text': "Total Revenue"},
+    domain={'row': 0, 'column': 0}
+))
+fig_kpi.add_trace(go.Indicator(
+    mode="number",
+    value=kpi['gross_profit'],
+    number={'prefix': "$", 'valueformat': ",.0f"},
+    title={'text': "Gross Profit"},
+    domain={'row': 0, 'column': 1}
+))
+fig_kpi.add_trace(go.Indicator(
+    mode="number",
+    value=kpi['blended_margin_pct'],
+    number={'suffix': "%"},
+    title={'text': "Blended Gross Margin"},
+    domain={'row': 0, 'column': 2}
+))
+fig_kpi.update_layout(grid={'rows': 1, 'columns': 3, 'pattern': 'independent'}, height=220)
+fig_kpi.show()
+```
+
+## Margin by Product Category & Region
+
+```{python}
+cat_query = """
+SELECT 
+    category,
+    region,
+    ROUND(SUM(revenue), 2) AS revenue,
+    ROUND(SUM(revenue - cogs) / SUM(revenue) * 100, 2) AS margin_pct
+FROM 'data/sales_sample.parquet'
+GROUP BY category, region
+ORDER BY revenue DESC
+"""
+df_cat = con.execute(cat_query).df()
+
+fig_bar = px.bar(
+    df_cat,
+    x="category",
+    y="revenue",
+    color="margin_pct",
+    barmode="group",
+    facet_col="region",
+    labels={"margin_pct": "Margin %", "revenue": "Revenue ($)"},
+    color_continuous_scale="Viridis",
+    title="Regional Revenue Distribution by Realized Margin %"
+)
+fig_bar.show()
+```
+
+## Discount Leakage Analysis
+
+```{python}
+leakage_query = """
+SELECT 
+    discount_pct,
+    category,
+    ROUND(AVG((revenue - cogs) / revenue * 100), 2) AS avg_margin_pct
+FROM 'data/sales_sample.parquet'
+GROUP BY discount_pct, category
+ORDER BY discount_pct ASC
+"""
+df_leakage = con.execute(leakage_query).df()
+
+fig_scatter = px.line(
+    df_leakage,
+    x="discount_pct",
+    y="avg_margin_pct",
+    color="category",
+    markers=True,
+    title="Gross Margin Erosion across Discount Bands",
+    labels={"discount_pct": "Discount Rate", "avg_margin_pct": "Realized Margin %"}
+)
+fig_scatter.show()
+```

@@ -1,0 +1,19 @@
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# Quarto Intermediates
+.quarto/
+*_files/
+*_cache/
+
+# System / Editor
+.DS_Store
+.vscode/
+.idea/
+
